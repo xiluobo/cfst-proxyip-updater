@@ -52,6 +52,20 @@ sudo ./update_proxyip.sh --dry-run
 sudo /opt/cfst_proxyip/update_proxyip.sh
 ```
 
+## 一键卸载
+
+如果不再使用，可以直接执行：
+
+```bash
+sudo /opt/cfst_proxyip/uninstall.sh
+```
+
+它会自动：
+- 删除 `/opt/cfst_proxyip`
+- 删除 cron 定时任务
+- 删除 systemd timer / service
+- 清理运行相关日志和配置
+
 ## 手动安装
 
 ```bash
@@ -127,6 +141,7 @@ cd /opt/cfst_proxyip
 config.example.conf   # 配置模板
 healthcheck.sh        # 诊断当前 Worker 绑定与日志
 install.sh             # Debian/Ubuntu 安装脚本
+uninstall.sh           # 一键卸载脚本
 update_proxyip.sh      # 主更新脚本
 cfst-proxyip-updater.service
 cfst-proxyip-updater.timer
