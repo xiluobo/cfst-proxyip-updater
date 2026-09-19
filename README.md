@@ -11,6 +11,7 @@
 - 校验 Cloudflare HTTP 状态和 API `success` 字段；失败时返回非零状态
 - 更新前会校验 Worker 是否存在，并保留现有其他 binding，避免覆盖其他环境变量
 - 支持 `DRY_RUN=true` 只测速不更新，便于首次验证
+- 支持多个变量更新：`ENV_VAR_NAMES="proxyip,proxyip_backup"`
 - 安装脚本支持自动写入 cron 定时任务与 systemd timer，方便长期运行
 
 ## 一键安装
@@ -34,6 +35,8 @@ ACCOUNT_ID="你的Account_ID"
 API_TOKEN="你的API_Token"
 WORKER_NAME="你的Worker名称"
 ENV_VAR_NAME="proxyip"
+# 如需多个绑定同时更新：
+ENV_VAR_NAMES="proxyip,proxyip_backup"
 ```
 
 首次运行建议使用测试模式，只测速而不更新 Cloudflare：
@@ -79,9 +82,12 @@ INSTALL_SYSTEMD=false
 - `CFCOLO`：例如 `TPE,KHH`、`HKG`；留空不限制
 - `N` / `DN` / `TL`：CFST 测速数量、下载线程和延迟阈值
 - `USE_PUBLIC_PROXY_IP`：是否拉取公开来源；为 `false` 时仅使用 `IP_FILE`
-- `CURL_TIMEOUT` / `CURL_RETRIES`：公开源请求的超时和重试次数
+- `CURL_TIMEOUT` / `CURL_RETRIES` / `RETRY_DELAY`：公开源请求的超时与重试参数
 - `LOG_FILE`：更新日志保存路径
+- `LOG_KEEP_DAYS`：自动清理超过多少天的日志文件
 - `DRY_RUN`：设为 `true` 时不调用 Cloudflare API
+- `ENV_VAR_NAME`：单个变量名（兼容字段）
+- `ENV_VAR_NAMES`：多个变量名，逗号分隔
 - `INSTALL_CRON`：安装时是否自动写入 crontab
 - `INSTALL_SYSTEMD`：安装时是否自动注册 systemd timer
 - `SYSTEMD_SERVICE_NAME`：systemd 定时任务命名
@@ -93,6 +99,13 @@ INSTALL_SYSTEMD=false
 ```bash
 cd /opt/cfst_proxyip
 ./update_proxyip.sh --config /opt/cfst_proxyip/config.conf --dry-run --log /opt/cfst_proxyip/update.log
+```
+
+仅检查 Worker 绑定而不测速、不更新：
+
+```bash
+cd /opt/cfst_proxyip
+./update_proxyip.sh --check-only
 ```
 
 运行状态检查：
