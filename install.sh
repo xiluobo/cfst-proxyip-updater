@@ -12,9 +12,10 @@ fi
 
 command -v apt-get >/dev/null 2>&1 || { echo "错误: 当前安装脚本仅支持 Debian/Ubuntu（需要 apt-get）" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || { apt-get update -qq; apt-get install -y -qq curl; }
+command -v python3 >/dev/null 2>&1 || { apt-get update -qq; apt-get install -y -qq python3; }
 
 apt-get update -qq
-apt-get install -y -qq ca-certificates curl cron tar gzip >/dev/null
+apt-get install -y -qq ca-certificates curl cron tar gzip python3 >/dev/null
 
 INSTALL_DIR="/opt/cfst_proxyip"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -78,7 +79,7 @@ cat <<EOF
 
 安装完成。
 1. 编辑配置: nano $INSTALL_DIR/config.conf
-2. 试运行:   cd $INSTALL_DIR && ./update_proxyip.sh
+2. 试运行:   cd $INSTALL_DIR && ./update_proxyip.sh --dry-run
 3. 定时任务: crontab -l | grep "$INSTALL_DIR/update_proxyip.sh"  查看是否已注册
 4. 手工执行:  $INSTALL_DIR/update_proxyip.sh >> $INSTALL_DIR/cron.log 2>&1
 EOF

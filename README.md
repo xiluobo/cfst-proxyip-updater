@@ -9,7 +9,7 @@
 - 使用临时文件，避免测速失败覆盖上一次有效结果
 - 更新任务加锁，避免 cron 重复并发执行
 - 校验 Cloudflare HTTP 状态和 API `success` 字段；失败时返回非零状态
-- 检查 Worker 是否存在，并在更新前提前失败，避免配置错误造成重复尝试
+- 更新前会校验 Worker 是否存在，并保留现有其他 binding，避免覆盖其他环境变量
 - 支持 `DRY_RUN=true` 只测速不更新，便于首次验证
 - 安装脚本支持自动写入 cron 定时任务，方便长期运行
 
@@ -40,14 +40,12 @@ ENV_VAR_NAME="proxyip"
 
 ```bash
 cd /opt/cfst_proxyip
-sudo sed -i 's/^DRY_RUN=false/DRY_RUN=true/' config.conf
-sudo ./update_proxyip.sh
+sudo ./update_proxyip.sh --dry-run
 ```
 
 确认测速结果正常后，执行正式更新：
 
 ```bash
-sudo sed -i 's/^DRY_RUN=true/DRY_RUN=false/' /opt/cfst_proxyip/config.conf
 sudo /opt/cfst_proxyip/update_proxyip.sh
 ```
 
@@ -60,12 +58,12 @@ cp config.example.conf config.conf
 nano config.conf
 sudo ./install.sh
 cd /opt/cfst_proxyip
-./update_proxyip.sh
+./update_proxyip.sh --dry-run
 ```
 
 需要填写 `ACCOUNT_ID`、`API_TOKEN`、`WORKER_NAME` 和 `ENV_VAR_NAME`。Token 至少需要 Account → Workers Scripts → Edit 权限。不要把真实 `config.conf` 提交到 GitHub。
 
-默认每 6 小时运行一次；安装脚本会自动注册 cron 任务，如果你希望关闭，可将 `config.conf` 中的 `INSTALL_CRON=false`：
+默认每 6 小时运行一次；安装脚本会自动注册 cron 任务，若想关闭，可在 `config.conf` 中设置 `INSTALL_CRON=false`：
 
 ```cron
 0 */6 * * * /opt/cfst_proxyip/update_proxyip.sh >> /opt/cfst_proxyip/cron.log 2>&1
@@ -80,6 +78,15 @@ cd /opt/cfst_proxyip
 - `LOG_FILE`：更新日志保存路径
 - `DRY_RUN`：设为 `true` 时不调用 Cloudflare API
 - `INSTALL_CRON`：安装时是否自动写入 crontab
+
+## 高级用法
+
+支持通过命令行覆盖配置：
+
+```bash
+cd /opt/cfst_proxyip
+./update_proxyip.sh --config /opt/cfst_proxyip/config.conf --dry-run --log /opt/cfst_proxyip/update.log
+```
 
 ## 故障排查
 

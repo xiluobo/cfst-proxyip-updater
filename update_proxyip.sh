@@ -2,12 +2,57 @@
 set -Eeuo pipefail
 
 # CFST 优选 IP 测速并更新 Cloudflare Worker binding。
-# 可通过 CONFIG_FILE 指定配置文件；DRY_RUN=true 时仅测速，不更新 Worker。
+# 支持 --config / --dry-run 等命令行参数，且会保留现有 Workers binding。
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="${BASE_DIR:-$SCRIPT_DIR}"
 CONFIG_FILE="${CONFIG_FILE:-$BASE_DIR/config.conf}"
 LOG_FILE="${LOG_FILE:-$BASE_DIR/update.log}"
+
+usage() {
+  cat <<'EOF'
+Usage: update_proxyip.sh [options]
+
+Options:
+  --config FILE        指定配置文件路径 (默认: ./config.conf)
+  --dry-run            仅测速，不更新 Cloudflare Worker
+  --no-dry-run         关闭 dry-run
+  --log FILE           指定日志文件
+  --help               显示帮助
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config)
+      [[ $# -ge 2 ]] || { echo "缺少配置文件参数" >&2; exit 1; }
+      CONFIG_FILE="$2"
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    --no-dry-run)
+      DRY_RUN=false
+      shift
+      ;;
+    --log)
+      [[ $# -ge 2 ]] || { echo "缺少日志文件参数" >&2; exit 1; }
+      LOG_FILE="$2"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "未知参数: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
 
 if [[ ! -r "$CONFIG_FILE" ]]; then
   echo "错误: 找不到配置文件: $CONFIG_FILE" >&2
@@ -51,6 +96,7 @@ require_command curl
 require_command awk
 require_command sort
 require_command grep
+require_command python3
 [[ -x ./cfst ]] || fail "未找到可执行的 ./cfst，请先运行 install.sh"
 [[ -n "$ACCOUNT_ID" && "$ACCOUNT_ID" != "你的Account_ID" ]] || fail "ACCOUNT_ID 未配置"
 [[ -n "$WORKER_NAME" && "$WORKER_NAME" =~ ^[A-Za-z0-9_-]+$ ]] || fail "WORKER_NAME 只能包含字母、数字、下划线和短横线"
@@ -95,6 +141,37 @@ check_worker_exists() {
   return 1
 }
 
+build_update_payload() {
+  local settings_json="$1"
+  python3 - "$settings_json" "$ENV_VAR_NAME" "$BEST_IP" <<'PY'
+import json, sys
+settings_path, var_name, best_ip = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(settings_path, 'r', encoding='utf-8') as fh:
+        data = json.load(fh)
+except Exception:
+    data = {"result": {"bindings": []}}
+
+bindings = data.get("result", {}).get("bindings", [])
+if not isinstance(bindings, list):
+    bindings = []
+
+new_binding = {"type": "plain_text", "name": var_name, "text": best_ip}
+updated = []
+seen = False
+for binding in bindings:
+    if isinstance(binding, dict) and binding.get("name") == var_name:
+        updated.append(new_binding)
+        seen = True
+    else:
+        updated.append(binding)
+if not seen:
+    updated.append(new_binding)
+
+print(json.dumps({"bindings": updated}, separators=(",", ":"), ensure_ascii=False))
+PY
+}
+
 SOURCE_FILE="$TMP_DIR/sources.txt"
 : > "$SOURCE_FILE"
 if [[ "$USE_PUBLIC_PROXY_IP" == "true" ]]; then
@@ -134,12 +211,20 @@ else
   echo "[3/4] 检查 Worker 是否存在..."
   check_worker_exists || fail "Worker ${WORKER_NAME} 不存在或权限不足"
 
+  SETTINGS_FILE="$TMP_DIR/workers_settings.json"
+  curl --silent --show-error --location --output "$SETTINGS_FILE" \
+    --header "Authorization: Bearer ${API_TOKEN}" \
+    "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/settings" \
+    || fail "无法读取 Worker 设置，确认脚本权限和配置正确"
+
+  PATCH_BODY="$(build_update_payload "$SETTINGS_FILE")"
   echo "[3/4] 更新 Workers ${ENV_VAR_NAME}..."
   RESPONSE_FILE="$TMP_DIR/response.json"
   HTTP_CODE="$(curl --silent --show-error --location --output "$RESPONSE_FILE" --write-out '%{http_code}' \
     --request PATCH "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/settings" \
     --header "Authorization: Bearer ${API_TOKEN}" --header 'Content-Type: application/json' \
-    --data "{\"bindings\":[{\"type\":\"plain_text\",\"name\":\"${ENV_VAR_NAME}\",\"text\":\"${BEST_IP}\"}]}" || true)"
+    --data "$PATCH_BODY" || true)"
+
   if [[ "$HTTP_CODE" =~ ^2[0-9][0-9]$ ]] && grep -q '"success"[[:space:]]*:[[:space:]]*true' "$RESPONSE_FILE"; then
     echo "  更新成功！${ENV_VAR_NAME} = $BEST_IP"
     printf '%s %s=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$ENV_VAR_NAME" "$BEST_IP" >> "$LOG_FILE"
