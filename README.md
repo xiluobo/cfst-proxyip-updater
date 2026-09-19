@@ -11,7 +11,7 @@
 - 校验 Cloudflare HTTP 状态和 API `success` 字段；失败时返回非零状态
 - 更新前会校验 Worker 是否存在，并保留现有其他 binding，避免覆盖其他环境变量
 - 支持 `DRY_RUN=true` 只测速不更新，便于首次验证
-- 安装脚本支持自动写入 cron 定时任务，方便长期运行
+- 安装脚本支持自动写入 cron 定时任务与 systemd timer，方便长期运行
 
 ## 一键安装
 
@@ -63,7 +63,12 @@ cd /opt/cfst_proxyip
 
 需要填写 `ACCOUNT_ID`、`API_TOKEN`、`WORKER_NAME` 和 `ENV_VAR_NAME`。Token 至少需要 Account → Workers Scripts → Edit 权限。不要把真实 `config.conf` 提交到 GitHub。
 
-默认每 6 小时运行一次；安装脚本会自动注册 cron 任务，若想关闭，可在 `config.conf` 中设置 `INSTALL_CRON=false`：
+默认每 6 小时运行一次；安装脚本会自动注册 cron 任务和 systemd timer。若想关闭某一种，可在 `config.conf` 中设置：
+
+```ini
+INSTALL_CRON=false
+INSTALL_SYSTEMD=false
+```
 
 ```cron
 0 */6 * * * /opt/cfst_proxyip/update_proxyip.sh >> /opt/cfst_proxyip/cron.log 2>&1
@@ -78,6 +83,8 @@ cd /opt/cfst_proxyip
 - `LOG_FILE`：更新日志保存路径
 - `DRY_RUN`：设为 `true` 时不调用 Cloudflare API
 - `INSTALL_CRON`：安装时是否自动写入 crontab
+- `INSTALL_SYSTEMD`：安装时是否自动注册 systemd timer
+- `SYSTEMD_SERVICE_NAME`：systemd 定时任务命名
 
 ## 高级用法
 
@@ -88,18 +95,28 @@ cd /opt/cfst_proxyip
 ./update_proxyip.sh --config /opt/cfst_proxyip/config.conf --dry-run --log /opt/cfst_proxyip/update.log
 ```
 
+运行状态检查：
+
+```bash
+cd /opt/cfst_proxyip
+./healthcheck.sh
+```
+
 ## 故障排查
 
 - 没有测速结果：检查 VPS 网络，或放宽 `CFCOLO`、增大 `TL`
 - Worker 更新失败：检查 Account ID、Worker 名称和 Token 权限；脚本会输出完整 API 错误
-- 任务未执行：检查 `cron.log`，确认 `cfst`、`config.conf` 和 `ip.txt` 位于 `/opt/cfst_proxyip`
+- 任务未执行：检查 `cron.log` 或 `systemctl status cfs...`，确认 `cfst`、`config.conf` 和 `ip.txt` 位于 `/opt/cfst_proxyip`
 
 ## 目录结构
 
 ```text
 config.example.conf   # 配置模板
+healthcheck.sh        # 诊断当前 Worker 绑定与日志
 install.sh             # Debian/Ubuntu 安装脚本
 update_proxyip.sh      # 主更新脚本
+cfst-proxyip-updater.service
+cfst-proxyip-updater.timer
 ```
 
 ## License

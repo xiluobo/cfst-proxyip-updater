@@ -20,6 +20,8 @@ apt-get install -y -qq ca-certificates curl cron tar gzip python3 >/dev/null
 INSTALL_DIR="/opt/cfst_proxyip"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_CRON="${INSTALL_CRON:-true}"
+INSTALL_SYSTEMD="${INSTALL_SYSTEMD:-true}"
+SYSTEMD_SERVICE_NAME="${SYSTEMD_SERVICE_NAME:-cfst-proxyip-updater}"
 
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
@@ -41,6 +43,7 @@ curl --fail --silent --show-error --location --retry 3 -o "$INSTALL_DIR/ip.txt" 
   echo "警告: 官方 IP 列表下载失败，可稍后手动放置 ip.txt"
 
 install -m 0755 "$SCRIPT_DIR/update_proxyip.sh" "$INSTALL_DIR/update_proxyip.sh"
+install -m 0755 "$SCRIPT_DIR/healthcheck.sh" "$INSTALL_DIR/healthcheck.sh"
 if [[ -f "$SCRIPT_DIR/config.conf" ]]; then
   install -m 0600 "$SCRIPT_DIR/config.conf" "$INSTALL_DIR/config.conf"
 elif [[ ! -f "$INSTALL_DIR/config.conf" ]]; then
@@ -71,8 +74,57 @@ install_cron_job() {
   echo "已安装 cron 定时任务：${cron_entry}"
 }
 
+install_systemd_service() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "未检测到 systemctl，跳过 systemd 安装"
+    return 0
+  fi
+
+  local service_file="/etc/systemd/system/${SYSTEMD_SERVICE_NAME}.service"
+  local timer_file="/etc/systemd/system/${SYSTEMD_SERVICE_NAME}.timer"
+
+  cat > "$service_file" <<EOF
+[Unit]
+Description=CFST ProxyIP Auto Updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cfst_proxyip
+ExecStart=/opt/cfst_proxyip/update_proxyip.sh --config /opt/cfst_proxyip/config.conf
+StandardOutput=append:/opt/cfst_proxyip/cron.log
+StandardError=append:/opt/cfst_proxyip/cron.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  cat > "$timer_file" <<EOF
+[Unit]
+Description=Run CFST ProxyIP Auto Updater every 6 hours
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+Persistent=true
+Unit=${SYSTEMD_SERVICE_NAME}.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable --now "${SYSTEMD_SERVICE_NAME}.timer" >/dev/null 2>&1 || true
+  echo "已安装 systemd timer：${SYSTEMD_SERVICE_NAME}.timer"
+}
+
 if [[ "$INSTALL_CRON" == "true" ]]; then
   install_cron_job
+fi
+
+if [[ "$INSTALL_SYSTEMD" == "true" ]]; then
+  install_systemd_service
 fi
 
 cat <<EOF
@@ -80,6 +132,8 @@ cat <<EOF
 安装完成。
 1. 编辑配置: nano $INSTALL_DIR/config.conf
 2. 试运行:   cd $INSTALL_DIR && ./update_proxyip.sh --dry-run
-3. 定时任务: crontab -l | grep "$INSTALL_DIR/update_proxyip.sh"  查看是否已注册
-4. 手工执行:  $INSTALL_DIR/update_proxyip.sh >> $INSTALL_DIR/cron.log 2>&1
+3. 诊断检查: cd $INSTALL_DIR && ./healthcheck.sh
+4. 定时任务: crontab -l | grep "$INSTALL_DIR/update_proxyip.sh"  查看是否已注册
+5. systemd:   systemctl status ${SYSTEMD_SERVICE_NAME}.timer
+6. 手工执行:  $INSTALL_DIR/update_proxyip.sh >> $INSTALL_DIR/cron.log 2>&1
 EOF

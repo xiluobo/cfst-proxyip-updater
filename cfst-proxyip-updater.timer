@@ -1,0 +1,11 @@
+[Unit]
+Description=Run CFST ProxyIP Auto Updater every 6 hours
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+Persistent=true
+Unit=cfst-proxyip-updater.service
+
+[Install]
+WantedBy=timers.target

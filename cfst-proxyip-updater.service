@@ -1,0 +1,14 @@
+[Unit]
+Description=CFST ProxyIP Auto Updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cfst_proxyip
+ExecStart=/opt/cfst_proxyip/update_proxyip.sh --config /opt/cfst_proxyip/config.conf
+StandardOutput=append:/opt/cfst_proxyip/cron.log
+StandardError=append:/opt/cfst_proxyip/cron.log
+
+[Install]
+WantedBy=multi-user.target
