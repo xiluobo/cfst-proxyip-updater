@@ -2,11 +2,12 @@
 set -Eeuo pipefail
 
 # CFST 优选 IP 测速并更新 Cloudflare Worker binding。
-# 可通过 CONFIG_FILE 指定配置文件，通过 DRY_RUN=true 只测速不更新。
+# 可通过 CONFIG_FILE 指定配置文件；DRY_RUN=true 时仅测速，不更新 Worker。
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="${BASE_DIR:-$SCRIPT_DIR}"
 CONFIG_FILE="${CONFIG_FILE:-$BASE_DIR/config.conf}"
+LOG_FILE="${LOG_FILE:-$BASE_DIR/update.log}"
 
 if [[ ! -r "$CONFIG_FILE" ]]; then
   echo "错误: 找不到配置文件: $CONFIG_FILE" >&2
@@ -34,6 +35,11 @@ source "$CONFIG_FILE"
 : "${CURL_RETRIES:=2}"
 : "${LOCK_DIR:=$BASE_DIR/.update.lock}"
 : "${DRY_RUN:=false}"
+: "${LOG_FILE:=update.log}"
+
+if [[ "$LOG_FILE" != /* ]]; then
+  LOG_FILE="$BASE_DIR/$LOG_FILE"
+fi
 
 cd "$BASE_DIR"
 
@@ -44,6 +50,7 @@ is_uint() { [[ "$1" =~ ^[0-9]+$ ]]; }
 require_command curl
 require_command awk
 require_command sort
+require_command grep
 [[ -x ./cfst ]] || fail "未找到可执行的 ./cfst，请先运行 install.sh"
 [[ -n "$ACCOUNT_ID" && "$ACCOUNT_ID" != "你的Account_ID" ]] || fail "ACCOUNT_ID 未配置"
 [[ -n "$WORKER_NAME" && "$WORKER_NAME" =~ ^[A-Za-z0-9_-]+$ ]] || fail "WORKER_NAME 只能包含字母、数字、下划线和短横线"
@@ -69,6 +76,23 @@ fetch_ips() {
     --retry "$CURL_RETRIES" --retry-delay 2 "$url" 2>/dev/null |
     grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' |
     awk -F. '($1<=255 && $2<=255 && $3<=255 && $4<=255) {print}' >> "$output" || true
+}
+
+check_worker_exists() {
+  local status response_file="$TMP_DIR/worker_check.json"
+  status="$(curl --silent --show-error --location --output "$response_file" --write-out '%{http_code}' \
+    --header "Authorization: Bearer ${API_TOKEN}" \
+    "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/${WORKER_NAME}" || true)"
+
+  if [[ "$status" == "200" ]]; then
+    return 0
+  fi
+
+  echo "Cloudflare Worker 检查失败（HTTP ${status:-unknown}）" >&2
+  if [[ -s "$response_file" ]]; then
+    cat "$response_file" >&2
+  fi
+  return 1
 }
 
 SOURCE_FILE="$TMP_DIR/sources.txt"
@@ -107,6 +131,9 @@ echo "  最快 IP: $BEST_IP"
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "[3/4] DRY_RUN=true，跳过 Cloudflare 更新"
 else
+  echo "[3/4] 检查 Worker 是否存在..."
+  check_worker_exists || fail "Worker ${WORKER_NAME} 不存在或权限不足"
+
   echo "[3/4] 更新 Workers ${ENV_VAR_NAME}..."
   RESPONSE_FILE="$TMP_DIR/response.json"
   HTTP_CODE="$(curl --silent --show-error --location --output "$RESPONSE_FILE" --write-out '%{http_code}' \
@@ -115,7 +142,7 @@ else
     --data "{\"bindings\":[{\"type\":\"plain_text\",\"name\":\"${ENV_VAR_NAME}\",\"text\":\"${BEST_IP}\"}]}" || true)"
   if [[ "$HTTP_CODE" =~ ^2[0-9][0-9]$ ]] && grep -q '"success"[[:space:]]*:[[:space:]]*true' "$RESPONSE_FILE"; then
     echo "  更新成功！${ENV_VAR_NAME} = $BEST_IP"
-    printf '%s %s=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$ENV_VAR_NAME" "$BEST_IP" >> update.log
+    printf '%s %s=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$ENV_VAR_NAME" "$BEST_IP" >> "$LOG_FILE"
   else
     echo "  Cloudflare API 更新失败（HTTP ${HTTP_CODE:-unknown}）:" >&2
     cat "$RESPONSE_FILE" >&2
