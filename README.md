@@ -1,85 +1,58 @@
 # CFST ProxyIP Auto Updater
 
-自动测速 Cloudflare 优选/反代 IP，并更新到 Cloudflare Workers 的 `proxyip` 变量。
-
-适用于：
-- Google Cloud 免费 e2-micro / 其他 Linux VPS
-- 需要给 Workers（如 square 项目）自动更换 proxyip 的场景
+自动测速 Cloudflare 优选/反代 IP，并安全更新 Cloudflare Workers 的 plain-text binding。
 
 ## 功能
 
-- 自动拉取公开优选/反代 IP 列表
-- 支持指定国家/地区（`-cfcolo`）
-- 测速后自动更新 Workers 环境变量 `proxyip`
-- 可配合 crontab 定时检测与更新
+- 合并官方 `ip.txt` 与可配置的公开 IP 源，并去重、过滤非法 IPv4
+- 支持 `CFCOLO` 地区筛选和 CFST 延迟测速
+- 使用临时文件，避免测速失败覆盖上一次有效结果
+- 更新任务加锁，避免 cron 重复并发执行
+- 校验 Cloudflare HTTP 状态和 API `success` 字段；失败时返回非零状态
+- 支持 `DRY_RUN=true` 只测速不更新，便于首次验证
 
 ## 快速开始
 
-### 1. 克隆仓库
-
 ```bash
-git clone https://github.com/你的用户名/cfst-proxyip-updater.git
+git clone https://github.com/xiluobo/cfst-proxyip-updater.git
 cd cfst-proxyip-updater
-```
-
-### 2. 配置
-
-```bash
 cp config.example.conf config.conf
 nano config.conf
-```
-
-填写：
-- `ACCOUNT_ID`：Cloudflare 账号 ID
-- `API_TOKEN`：具有 Workers Scripts Edit 权限的 Token
-- `WORKER_NAME`：Worker 名称（如 square）
-- `ENV_VAR_NAME`：变量名（默认 proxyip）
-- `CFCOLO`：优选地区，如 `TPE,KHH`（台湾）、`HKG`（香港），留空不限制
-
-### 3. 安装并运行
-
-```bash
-chmod +x install.sh update_proxyip.sh
 sudo ./install.sh
 cd /opt/cfst_proxyip
 ./update_proxyip.sh
 ```
 
-### 4. 定时任务（每 6 小时）
+需要填写 `ACCOUNT_ID`、`API_TOKEN`、`WORKER_NAME` 和 `ENV_VAR_NAME`。Token 至少需要 Account → Workers Scripts → Edit 权限。不要把真实 `config.conf` 提交到 GitHub。
 
-```bash
-crontab -e
-```
+首次运行建议先设置 `DRY_RUN=true`，确认测速结果后再改回 `false`。默认每 6 小时运行一次：
 
-添加：
-
-```
+```cron
 0 */6 * * * /opt/cfst_proxyip/update_proxyip.sh >> /opt/cfst_proxyip/cron.log 2>&1
 ```
 
-## 创建 API Token
+## 参数说明
 
-1. 打开 https://dash.cloudflare.com/profile/api-tokens
-2. Create Token → Custom token
-3. 权限：
-   - Account → Workers Scripts → **Edit**
-4. 创建后复制 Token 填入 `config.conf`
+- `CFCOLO`：例如 `TPE,KHH`、`HKG`；留空不限制
+- `N` / `DN` / `TL`：CFST 测速数量、下载线程和延迟阈值
+- `USE_PUBLIC_PROXY_IP`：是否拉取公开来源；为 `false` 时仅使用 `IP_FILE`
+- `CURL_TIMEOUT` / `CURL_RETRIES`：公开源请求的超时和重试次数
+- `DRY_RUN`：设为 `true` 时不调用 Cloudflare API
 
-## 注意事项
+## 故障排查
 
-- **不要**把含真实 `API_TOKEN` 的 `config.conf` 提交到 GitHub
-- Google Cloud 免费机器性能有限，建议使用 `-dd`（只测延迟）或减小测速数量
-- 从美国机房测台湾/香港节点可能结果较少，可按实际网络调整 `CFCOLO`
+- 没有测速结果：检查 VPS 网络，或放宽 `CFCOLO`、增大 `TL`
+- API 更新失败：检查 Account ID、Worker 名称和 Token 权限；脚本会输出完整 API 错误
+- 任务未执行：检查 `cron.log`，确认 `cfst`、`config.conf` 和 `ip.txt` 位于 `/opt/cfst_proxyip`
 
 ## 目录结构
 
-```
-├── config.example.conf   # 配置模板（可提交）
-├── install.sh            # 安装脚本
-├── update_proxyip.sh     # 主更新脚本
-└── README.md
+```text
+config.example.conf   # 配置模板
+install.sh             # Debian/Ubuntu 安装脚本
+update_proxyip.sh      # 主更新脚本
 ```
 
 ## License
 
-仅供学习与个人使用。请遵守 Cloudflare 服务条款。
+仅供学习和个人使用。请遵守 Cloudflare 服务条款。

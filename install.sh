@@ -1,47 +1,53 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
 echo "=========================================="
 echo "  安装 CFST + ProxyIP 自动更新"
 echo "=========================================="
 
-if [ "$EUID" -ne 0 ]; then
-  echo "请使用 sudo 运行: sudo ./install.sh"
+if [[ $EUID -ne 0 ]]; then
+  echo "请使用 sudo 运行: sudo ./install.sh" >&2
   exit 1
 fi
-
+command -v apt-get >/dev/null 2>&1 || { echo "错误: 当前安装脚本仅支持 Debian/Ubuntu（需要 apt-get）" >&2; exit 1; }
+command -v curl >/dev/null 2>&1 || { apt-get update -qq; apt-get install -y -qq curl; }
 apt-get update -qq
-apt-get install -y -qq curl wget ca-certificates cron > /dev/null
+apt-get install -y -qq ca-certificates curl cron tar gzip >/dev/null
 
-mkdir -p /opt/cfst_proxyip
-cd /opt/cfst_proxyip
+INSTALL_DIR="/opt/cfst_proxyip"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR"
 
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+ARCHIVE="$TMP_DIR/cfst.tar.gz"
+URL="https://github.com/XIU2/CloudflareSpeedTest/releases/latest/download/cfst_linux_amd64.tar.gz"
 echo "下载 CloudflareSpeedTest..."
-wget -q -O cfst.tar.gz "https://github.com/XIU2/CloudflareSpeedTest/releases/latest/download/cfst_linux_amd64.tar.gz" || \
-wget -q -O cfst.tar.gz "https://ghfast.top/https://github.com/XIU2/CloudflareSpeedTest/releases/latest/download/cfst_linux_amd64.tar.gz"
-tar -xzf cfst.tar.gz
-rm -f cfst.tar.gz
-# 兼容解压到子目录的情况
-if [ -d cfst_linux_amd64 ]; then
-  mv cfst_linux_amd64/* . 2>/dev/null || true
-  rmdir cfst_linux_amd64 2>/dev/null || true
+curl --fail --silent --show-error --location --retry 3 --retry-delay 2 -o "$ARCHIVE" "$URL"
+tar -xzf "$ARCHIVE" -C "$TMP_DIR"
+CFST_PATH="$(find "$TMP_DIR" -type f -name cfst -print -quit)"
+[[ -n "$CFST_PATH" ]] || { echo "错误: 下载包中未找到 cfst" >&2; exit 1; }
+install -m 0755 "$CFST_PATH" "$INSTALL_DIR/cfst"
+curl --fail --silent --show-error --location --retry 3 -o "$INSTALL_DIR/ip.txt" \
+  "https://raw.githubusercontent.com/XIU2/CloudflareSpeedTest/master/ip.txt" || \
+  echo "警告: 官方 IP 列表下载失败，可稍后手动放置 ip.txt"
+
+install -m 0755 "$SCRIPT_DIR/update_proxyip.sh" "$INSTALL_DIR/update_proxyip.sh"
+if [[ -f "$SCRIPT_DIR/config.conf" ]]; then
+  install -m 0600 "$SCRIPT_DIR/config.conf" "$INSTALL_DIR/config.conf"
+elif [[ ! -f "$INSTALL_DIR/config.conf" ]]; then
+  install -m 0600 "$SCRIPT_DIR/config.example.conf" "$INSTALL_DIR/config.conf"
+  echo "已复制配置模板，请编辑 $INSTALL_DIR/config.conf 填写真实 Token"
+else
+  echo "保留已有配置: $INSTALL_DIR/config.conf"
 fi
-chmod +x cfst 2>/dev/null || true
 
-wget -q -O ip.txt "https://raw.githubusercontent.com/XIU2/CloudflareSpeedTest/master/ip.txt" 2>/dev/null || true
+cat <<EOF
 
-# 复制脚本
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cp -f "$SCRIPT_DIR/update_proxyip.sh" /opt/cfst_proxyip/
-if [ -f "$SCRIPT_DIR/config.conf" ]; then
-  cp -f "$SCRIPT_DIR/config.conf" /opt/cfst_proxyip/
-elif [ -f "$SCRIPT_DIR/config.example.conf" ]; then
-  cp -f "$SCRIPT_DIR/config.example.conf" /opt/cfst_proxyip/config.conf
-  echo "已复制 config.example.conf → config.conf，请编辑填写真实 Token"
-fi
-chmod +x /opt/cfst_proxyip/update_proxyip.sh
-
-echo ""
-echo "安装完成。"
-echo "1. 编辑配置: nano /opt/cfst_proxyip/config.conf"
-echo "2. 运行一次:  cd /opt/cfst_proxyip && ./update_proxyip.sh"
-echo "3. 定时任务:  crontab -e  添加: 0 */6 * * * /opt/cfst_proxyip/update_proxyip.sh >> /opt/cfst_proxyip/cron.log 2>&1"
+安装完成。
+1. 编辑配置: nano $INSTALL_DIR/config.conf
+2. 试运行:   cd $INSTALL_DIR && ./update_proxyip.sh
+3. 定时任务: crontab -e 添加：
+   0 */6 * * * $INSTALL_DIR/update_proxyip.sh >> $INSTALL_DIR/cron.log 2>&1
+EOF
