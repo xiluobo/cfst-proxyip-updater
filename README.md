@@ -11,7 +11,45 @@
 - 校验 Cloudflare HTTP 状态和 API `success` 字段；失败时返回非零状态
 - 支持 `DRY_RUN=true` 只测速不更新，便于首次验证
 
-## 快速开始
+## 一键安装
+
+适用于 Debian/Ubuntu。以下命令会下载项目并执行安装脚本：
+
+```bash
+bash -c 'set -Eeuo pipefail; TMP_DIR="$(mktemp -d)"; trap "rm -rf \"$TMP_DIR\"" EXIT; curl -fsSL https://github.com/xiluobo/cfst-proxyip-updater/archive/refs/heads/main.tar.gz | tar -xz -C "$TMP_DIR"; cd "$TMP_DIR/cfst-proxyip-updater-main"; sudo ./install.sh'
+```
+
+安装完成后编辑配置：
+
+```bash
+sudo nano /opt/cfst_proxyip/config.conf
+```
+
+至少填写以下配置：
+
+```ini
+ACCOUNT_ID="你的Account_ID"
+API_TOKEN="你的API_Token"
+WORKER_NAME="你的Worker名称"
+ENV_VAR_NAME="proxyip"
+```
+
+首次运行建议使用测试模式，只测速而不更新 Cloudflare：
+
+```bash
+cd /opt/cfst_proxyip
+sudo sed -i 's/^DRY_RUN=false/DRY_RUN=true/' config.conf
+sudo ./update_proxyip.sh
+```
+
+确认测速结果正常后，执行正式更新：
+
+```bash
+sudo sed -i 's/^DRY_RUN=true/DRY_RUN=false/' /opt/cfst_proxyip/config.conf
+sudo /opt/cfst_proxyip/update_proxyip.sh
+```
+
+## 手动安装
 
 ```bash
 git clone https://github.com/xiluobo/cfst-proxyip-updater.git
@@ -25,7 +63,7 @@ cd /opt/cfst_proxyip
 
 需要填写 `ACCOUNT_ID`、`API_TOKEN`、`WORKER_NAME` 和 `ENV_VAR_NAME`。Token 至少需要 Account → Workers Scripts → Edit 权限。不要把真实 `config.conf` 提交到 GitHub。
 
-首次运行建议先设置 `DRY_RUN=true`，确认测速结果后再改回 `false`。默认每 6 小时运行一次：
+默认每 6 小时运行一次：
 
 ```cron
 0 */6 * * * /opt/cfst_proxyip/update_proxyip.sh >> /opt/cfst_proxyip/cron.log 2>&1
