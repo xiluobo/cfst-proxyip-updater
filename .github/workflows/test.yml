@@ -13,32 +13,51 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install ShellCheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
 
       - name: Check shell syntax
         shell: bash
         run: |
-          set -euo pipefail
-          shopt -s nullglob
-          files=( *.sh )
-          test "${#files[@]}" -gt 0
+          set -Eeuo pipefail
+
+          mapfile -d '' files < <(
+            git ls-files -z -- '*.sh' 'config.example.conf'
+          )
+
+          ((${#files[@]} > 0)) || {
+            echo 'No shell files found.' >&2
+            exit 1
+          }
+
           for file in "${files[@]}"; do
+            echo "Checking syntax: $file"
             bash -n "$file"
           done
 
       - name: Run ShellCheck
         shell: bash
         run: |
-          set -euo pipefail
-          shopt -s nullglob
-          files=( *.sh )
-          test "${#files[@]}" -gt 0
-          shellcheck --severity=error "${files[@]}"
+          set -Eeuo pipefail
+
+          mapfile -d '' files < <(
+            git ls-files -z -- '*.sh' 'config.example.conf'
+          )
+
+          ((${#files[@]} > 0)) || {
+            echo 'No shell files found.' >&2
+            exit 1
+          }
+
+          shellcheck --severity=error --shell=bash "${files[@]}"
 
       - name: Check repository hygiene
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
           test ! -f config.conf
           test -f config.example.conf
           test -f README.md
