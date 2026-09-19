@@ -1,0 +1,35 @@
+name: Shell checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Check shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in *.sh; do
+            bash -n "$file"
+          done
+
+      - name: Run ShellCheck
+        run: shellcheck --severity=error *.sh
+
+      - name: Check repository hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -f config.conf
+          test -f config.example.conf
+          test -f README.md
