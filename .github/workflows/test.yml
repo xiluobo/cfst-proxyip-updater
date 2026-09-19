@@ -19,12 +19,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in *.sh; do
+          shopt -s nullglob
+          files=( *.sh )
+          test "${#files[@]}" -gt 0
+          for file in "${files[@]}"; do
             bash -n "$file"
           done
 
       - name: Run ShellCheck
-        run: shellcheck --severity=error *.sh
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=( *.sh )
+          test "${#files[@]}" -gt 0
+          shellcheck --severity=error "${files[@]}"
 
       - name: Check repository hygiene
         shell: bash
