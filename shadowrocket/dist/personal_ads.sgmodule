@@ -1,0 +1,13 @@
+#!name=个人定制｜广告拦截（自动更新）
+#!desc=已审核域名；无需HTTPS解密；非实时检测。
+#!author=Personal Shadowrocket Automation
+
+[Rule]
+DOMAIN,ad.doubleclick.net,REJECT
+DOMAIN,adsmind.gdtimg.com,REJECT
+DOMAIN,g.doubleclick.net,REJECT
+DOMAIN,gdt.qq.com,REJECT
+DOMAIN,googleads.g.doubleclick-cn.net,REJECT
+DOMAIN,googleads.g.doubleclick.net,REJECT
+DOMAIN,ipv4.gdt.qq.com,REJECT
+DOMAIN,pgdt.gtimg.cn,REJECT
