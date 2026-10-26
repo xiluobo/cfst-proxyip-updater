@@ -28,7 +28,7 @@ jobs:
       - name: Generate
         run: python scripts/engine.py --input data/observed_domains.ndjson
       - name: Validate rule count
-        run: python -c "import json; assert json.load(open('reports/summary.json'))['rule_count'] == 8"
+        run: python -c "import json; assert json.load(open('reports/summary.json'))['rule_count'] == 24"
       - name: Publish
         run: |
           git config user.name 'github-actions[bot]'
