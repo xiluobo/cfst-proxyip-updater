@@ -1,0 +1,37 @@
+name: Shadowrocket rules validation and publish
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'shadowrocket/scripts/**'
+      - 'shadowrocket/tests/**'
+      - 'shadowrocket/data/**'
+      - '.github/workflows/shadowrocket-rules.yml'
+  schedule:
+    - cron: '17 3 * * *'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shadowrocket
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Generate
+        run: python scripts/engine.py --input data/observed_domains.ndjson
+      - name: Validate rule count
+        run: python -c "import json; assert json.load(open('reports/summary.json'))['rule_count'] == 8"
+      - name: Publish
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist/personal_ads.sgmodule
+          git diff --cached --quiet || (git commit -m 'Update Shadowrocket module' && git push origin HEAD:main)
