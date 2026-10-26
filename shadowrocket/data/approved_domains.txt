@@ -1,0 +1,9 @@
+# Manually reviewed
+gdt.qq.com
+ipv4.gdt.qq.com
+adsmind.gdtimg.com
+pgdt.gtimg.cn
+ad.doubleclick.net
+g.doubleclick.net
+googleads.g.doubleclick.net
+googleads.g.doubleclick-cn.net
