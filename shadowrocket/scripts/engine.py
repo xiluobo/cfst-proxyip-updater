@@ -18,7 +18,7 @@ def read_report(path):
   if d:ds[d]+=1
  return ds,n,bad
 def rules(allow):
- return ['DOMAIN,'+d+',REJECT' for d in sorted(allow) if not protected(d)]
+ return ['DOMAIN-SUFFIX,'+d+',REJECT' for d in sorted(allow) if not protected(d)]
 def render(allow):
  return '\n'.join(['#!name=个人定制｜广告拦截（自动更新）','#!desc=已审核域名；无需HTTPS解密；非实时检测。','#!author=Personal Shadowrocket Automation','','[Rule]']+rules(allow)+[''])
 def run(path):
